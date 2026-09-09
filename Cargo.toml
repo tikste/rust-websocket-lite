@@ -31,13 +31,13 @@ native-tls = "0.2"
 quickcheck = "1"
 quickcheck_macros = "1"
 rand = "0.10"
-rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["logging", "std", "tls12"] }
 rustls-native-certs = "0.8"
 sha1 = { version = "0.11", default-features = false }
 static_assertions = "1"
 tokio = { version = "1", default-features = false }
 tokio-native-tls = "0.3"
-tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
 tokio-util = { version = "0.7", default-features = false }
 url = "2"
 webpki-roots = "1"

@@ -37,3 +37,10 @@ ssl-native-tls = ["__ssl", "dep:native-tls", "dep:tokio-native-tls"]
 __ssl-rustls = ["__ssl", "dep:rustls", "dep:tokio-rustls"]
 ssl-rustls-webpki-roots = ["__ssl-rustls", "dep:webpki-roots"]
 ssl-rustls-native-roots = ["__ssl-rustls", "dep:rustls-native-certs"]
+# Selecting a rustls crypto provider is the application's decision, not ours: enabling one here
+# would silently combine with the provider another dependency picks, and rustls then refuses to
+# determine a process-level default, panicking in `ClientConfig::builder()`. So the `ssl-rustls-*`
+# features deliberately enable none. Consumers either turn on one of the passthrough features
+# below, or install a provider themselves via `CryptoProvider::install_default()`.
+ring = ["rustls?/ring", "tokio-rustls?/ring"]
+aws-lc-rs = ["rustls?/aws-lc-rs", "tokio-rustls?/aws-lc-rs"]

@@ -48,6 +48,8 @@ jobs:
           - --no-default-features
           - --no-default-features --features ssl-rustls-native-roots
           - --no-default-features --features ssl-rustls-webpki-roots
+          - --no-default-features --features ssl-rustls-webpki-roots,ring
+          - --no-default-features --features ssl-rustls-webpki-roots,aws-lc-rs
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
