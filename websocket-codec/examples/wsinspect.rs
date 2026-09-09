@@ -3,10 +3,10 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::{i64, io, result};
+use std::{io, result};
 
 use bytes::{Buf, BytesMut};
-use structopt::StructOpt;
+use clap::Parser;
 use tokio_util::codec::Decoder;
 use websocket_codec::protocol::{DataLength, FrameHeader, FrameHeaderCodec};
 use websocket_codec::{Opcode, Result};
@@ -51,7 +51,7 @@ fn seek_forward<S: Seek>(mut stream: S, bytes: u64) -> result::Result<u64, io::E
 
 fn display(header: &FrameHeader) -> String {
     let opcode = header.opcode();
-    let opcode = Opcode::try_from(opcode).map_or_else(|| opcode.to_string(), |opcode| format!("{:?}", opcode));
+    let opcode = Opcode::try_from(opcode).map_or_else(|| opcode.to_string(), |opcode| format!("{opcode:?}"));
 
     let mask = header
         .mask()
@@ -90,19 +90,16 @@ fn inspect(path: &Path, dump_header: bool, dump_data: bool) -> Result<()> {
             let mut stdout = stdout.lock();
             io::copy(&mut stream, &mut stdout)?
         } else {
-            let prev_pos = stream.seek(SeekFrom::Current(0))?;
+            let prev_pos = stream.stream_position()?;
 
-            let pos = seek_forward(&mut stream, data_len)
-                .map(|pos| pos.min(file_len))
-                .unwrap_or(file_len);
+            let pos = seek_forward(&mut stream, data_len).map_or(file_len, |pos| pos.min(file_len));
 
             pos - prev_pos
         };
 
         if actual_data_len != data_len {
             return Err(format!(
-                "stream contains incomplete data: expected {0} bytes (0x{0:x} bytes), got {1} bytes (0x{1:x} bytes)",
-                data_len, actual_data_len
+                "stream contains incomplete data: expected {data_len} bytes (0x{data_len:x} bytes), got {actual_data_len} bytes (0x{actual_data_len:x} bytes)"
             )
             .into());
         }
@@ -116,18 +113,18 @@ fn inspect(path: &Path, dump_header: bool, dump_data: bool) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "wsinspect", about = "Inspect WebSocket protocol data")]
+#[derive(Debug, Parser)]
+#[command(name = "wsinspect", about = "Inspect WebSocket protocol data")]
 struct Opt {
     /// Disables display of frame headers
-    #[structopt(long)]
+    #[arg(long)]
     no_dump_header: bool,
 
     /// Displays frame payload data
-    #[structopt(long)]
+    #[arg(long)]
     dump_data: bool,
 
-    #[structopt(parse(from_os_str))]
+    /// Files containing WebSocket protocol data
     files: Vec<PathBuf>,
 }
 
@@ -136,7 +133,7 @@ fn main() {
         files,
         no_dump_header,
         dump_data,
-    } = Opt::from_args();
+    } = Opt::parse();
 
     for path in files {
         if let Err(e) = inspect(&path, !no_dump_header, dump_data) {

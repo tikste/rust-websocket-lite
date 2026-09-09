@@ -33,6 +33,8 @@ This is a standalone crate that does not do any I/O directly. For a full WebSock
 [Documentation](https://docs.rs/hyper-websocket-lite) | [Source](hyper-websocket-lite/src)
 
 Provides the `server_upgrade` function, which bridges a client's HTTP Upgrade request to the WebSocket protocol.
+It is built on hyper 1.x: pass the request from a `hyper::service::service_fn`, and enable upgrades on the
+connection (`hyper::server::conn::http1::Connection::with_upgrades`) so that the handshake can complete.
 
 ## Additional command line tools
 
@@ -44,6 +46,11 @@ Provides the `server_upgrade` function, which bridges a client's HTTP Upgrade re
   ```
   cargo run --example wsdump -- --help
   ```
+
+# Minimum supported Rust version
+
+The published crates build on Rust 1.85 and above, and use the 2024 edition. Building the repo's own
+benchmarks additionally needs Rust 1.86, because criterion 0.8 requires it.
 
 # async/await
 

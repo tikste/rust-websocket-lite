@@ -2,10 +2,10 @@ use std::io;
 use std::io::Write;
 use std::time::Duration;
 
+use clap::Parser;
 use futures_util::future::FutureExt;
 use futures_util::sink::SinkExt;
 use futures_util::stream::StreamExt;
-use structopt::StructOpt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time;
 use url::Url;
@@ -16,21 +16,21 @@ fn parse_secs(s: &str) -> Result<Duration> {
     Ok(Duration::from_secs(n))
 }
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "wsdump", about = "WebSocket Simple Dump Tool")]
+#[derive(Debug, Parser)]
+#[command(name = "wsdump", about = "WebSocket Simple Dump Tool")]
 struct Opt {
     /// wait time(second) after 'EOF' received.
-    #[structopt(long = "eof-wait", parse(try_from_str = parse_secs), default_value = "0")]
+    #[arg(long = "eof-wait", value_parser = parse_secs, default_value = "0")]
     eof_wait: Duration,
 
     /// websocket url. ex. ws://echo.websocket.org/
-    #[structopt(parse(try_from_str = Url::parse))]
+    #[arg(value_parser = Url::parse)]
     ws_url: Url,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let Opt { eof_wait, ws_url } = Opt::from_args();
+    let Opt { eof_wait, ws_url } = Opt::parse();
     let client = ClientBuilder::from_url(ws_url).async_connect().await?;
     let (sink, stream) = client.split();
 

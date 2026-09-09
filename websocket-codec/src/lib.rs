@@ -1,18 +1,10 @@
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
 #![allow(clippy::module_name_repetitions)]
-#![cfg_attr(feature = "nightly", feature(test))]
 
 //! A Tokio codec implementation of the WebSocket protocol.
 //!
 //! This crate does not do any I/O directly. For a full WebSocket client, see the [websocket-lite](https://docs.rs/websocket-lite) crate.
-
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck_macros;
-
-#[cfg(all(feature = "nightly", test))]
-extern crate test;
 
 mod close;
 mod frame;

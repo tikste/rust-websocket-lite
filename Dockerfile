@@ -7,13 +7,15 @@ RUN apt-get -y update && apt-get -y install \
     pkg-config
 
 WORKDIR /build
-COPY rust-toolchain .
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal -c clippy rustfmt --default-toolchain $(cat rust-toolchain)
+COPY rust-toolchain.toml .
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain none
 ENV PATH=$PATH:/root/.cargo/bin
+# Installs the channel and components named in rust-toolchain.toml.
+RUN rustup toolchain install
 RUN cargo install cargo-fuzz
 
-COPY rust-nightly-toolchain .
-RUN rustup toolchain install $(cat rust-nightly-toolchain)
+COPY rust-nightly-toolchain.toml .
+RUN rustup toolchain install --profile minimal "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-nightly-toolchain.toml)"
 
 FROM deps as src
 
@@ -61,7 +63,7 @@ FROM src as build
 RUN cargo build --release --workspace --exclude fuzz --all-targets
 
 FROM build as fuzz
-RUN mv rust-nightly-toolchain rust-toolchain
+RUN mv rust-nightly-toolchain.toml rust-toolchain.toml
 RUN cargo fuzz build
 
 FROM ubuntu:bionic-20220531 as app

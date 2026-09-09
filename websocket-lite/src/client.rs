@@ -1,7 +1,9 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream as StdTcpStream};
-use std::{fmt, mem, result, str};
+use std::{fmt, result, str};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use futures_util::StreamExt;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream as TokioTcpStream;
@@ -10,7 +12,7 @@ use url::Url;
 use websocket_codec::UpgradeCodec;
 
 use crate::{
-    sync, AsyncClient, AsyncConnector, AsyncMaybeTlsStream, Client, Connector, MaybeTlsStream, MessageCodec, Result,
+    AsyncClient, AsyncConnector, AsyncMaybeTlsStream, Client, Connector, MaybeTlsStream, MessageCodec, Result, sync,
 };
 
 fn replace_codec<T, C1, C2>(framed: Framed<T, C1>, codec: C2) -> Framed<T, C2>
@@ -42,7 +44,9 @@ fn make_key(key: Option<[u8; 16]>, key_base64: &mut [u8; 24]) -> &str {
     let key_bytes = key.unwrap_or_else(rand::random);
     assert_eq!(
         24,
-        base64::encode_config_slice(&key_bytes, base64::STANDARD, key_base64)
+        STANDARD
+            .encode_slice(key_bytes, key_base64)
+            .expect("didn't expect base64 encoding a 16 byte key into a 24 byte buffer to fail")
     );
 
     str::from_utf8(key_base64).unwrap()
@@ -121,13 +125,13 @@ impl ClientBuilder {
     /// Sets the SSL connector for the `connect` method.
     /// By default, the client will create a new one for each connection instead of reusing one.
     pub fn set_connector(&mut self, connector: Connector) -> Option<Connector> {
-        mem::replace(&mut self.connector, Some(connector))
+        self.connector.replace(connector)
     }
 
     /// Sets the SSL connector for the `async_connect` method.
     /// By default, the client will create a new one for each connection instead of reusing one.
     pub fn set_async_connector(&mut self, connector: AsyncConnector) -> Option<AsyncConnector> {
-        mem::replace(&mut self.async_connector, Some(connector))
+        self.async_connector.replace(connector)
     }
 
     /// Adds an extra HTTP header for the client
@@ -159,7 +163,7 @@ impl ClientBuilder {
     /// This method returns an `Err` result if connecting to the server fails.
     pub fn connect_insecure(self) -> Result<Client<StdTcpStream>> {
         let addr = resolve(&self.url)?;
-        let stream = StdTcpStream::connect(&addr)?;
+        let stream = StdTcpStream::connect(addr)?;
         self.connect_on(stream)
     }
 
@@ -193,7 +197,7 @@ impl ClientBuilder {
     /// This method returns an `Err` result if connecting to the server fails.
     pub fn connect(mut self) -> Result<Client<MaybeTlsStream>> {
         let addr = resolve(&self.url)?;
-        let stream = StdTcpStream::connect(&addr)?;
+        let stream = StdTcpStream::connect(addr)?;
 
         let connector = if let Some(connector) = self.connector.take() {
             connector
@@ -266,6 +270,8 @@ mod tests {
     use std::task::{Context, Poll};
     use std::{fmt, io, result, str};
 
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
     use crate::ClientBuilder;
@@ -350,7 +356,7 @@ mod tests {
         let mut output = Vec::new();
 
         ClientBuilder::new("ws://localhost:8000/stream?query")?
-            .key(&base64::decode(b"dGhlIHNhbXBsZSBub25jZQ==")?)
+            .key(&STANDARD.decode(b"dGhlIHNhbXBsZSBub25jZQ==")?)
             .async_connect_on(ReadWritePair(&mut input, &mut output))
             .await
             .unwrap();
@@ -365,7 +371,7 @@ mod tests {
         let mut output = Vec::new();
 
         ClientBuilder::new("ws://localhost:8000/stream?query")?
-            .key(&base64::decode(b"dGhlIHNhbXBsZSBub25jZQ==")?)
+            .key(&STANDARD.decode(b"dGhlIHNhbXBsZSBub25jZQ==")?)
             .connect_on(ReadWritePair(&mut input, &mut output))?;
 
         assert_eq!(REQUEST, str::from_utf8(&output)?);

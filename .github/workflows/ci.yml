@@ -1,32 +1,43 @@
 name: CI
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  SRC_IMAGE: websocket-lite-src:latest
 
 jobs:
   cargo-build:
     name: cargo build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3.2.0
-    - uses: jpribyl/action-docker-layer-caching@v0.1.0
-      continue-on-error: true
+    - uses: actions/checkout@v5
+    - uses: docker/setup-buildx-action@v3
     - name: Build deps
-      run: >-
-        docker build
-        --target deps
-        .
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        target: deps
+        cache-from: type=gha,scope=deps
+        cache-to: type=gha,mode=max,scope=deps
     - name: cargo build
-      run: >-
-        docker build
-        --target src
-        -t 1tgr/websocket-lite-src:latest
-        .
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        target: src
+        tags: ${{ env.SRC_IMAGE }}
+        cache-from: type=gha,scope=src
+        cache-to: type=gha,mode=max,scope=src
 
   cargo:
     name: cargo
     runs-on: ubuntu-latest
     needs: cargo-build
     strategy:
+      fail-fast: false
       matrix:
         command:
           - cargo check --all-targets
@@ -38,19 +49,20 @@ jobs:
           - --no-default-features --features ssl-rustls-native-roots
           - --no-default-features --features ssl-rustls-webpki-roots
     steps:
-      - uses: actions/checkout@v3.2.0
-      - uses: jpribyl/action-docker-layer-caching@v0.1.0
-        continue-on-error: true
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
       - name: cargo build
-        run: >-
-          docker build
-          --target src
-          -t 1tgr/websocket-lite-src:latest
-          .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: src
+          tags: ${{ env.SRC_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=src
       - name: ${{ matrix.command }} ${{ matrix.features }}
         run: >-
           docker run
-          1tgr/websocket-lite-src:latest
+          ${{ env.SRC_IMAGE }}
           ${{ matrix.command }} ${{ matrix.features }}
 
   cargo-fmt:
@@ -58,19 +70,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: cargo-build
     steps:
-      - uses: actions/checkout@v3.2.0
-      - uses: jpribyl/action-docker-layer-caching@v0.1.0
-        continue-on-error: true
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
       - name: cargo build
-        run: >-
-          docker build
-          --target src
-          -t 1tgr/websocket-lite-src:latest
-          .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: src
+          tags: ${{ env.SRC_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=src
       - name: cargo fmt -- --check
         run: >-
           docker run
-          1tgr/websocket-lite-src:latest
+          ${{ env.SRC_IMAGE }}
           cargo fmt -- --check
 
   integration-test:
@@ -78,35 +91,37 @@ jobs:
     runs-on: ubuntu-latest
     needs: cargo-build
     steps:
-    - uses: actions/checkout@v3.2.0
-    - uses: jpribyl/action-docker-layer-caching@v0.1.0
-      continue-on-error: true
+    - uses: actions/checkout@v5
+    - uses: docker/setup-buildx-action@v3
     - name: Build integration test
-      run: >-
-        docker build
-        --target app
-        -t 1tgr/websocket-lite:latest
-        .
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        target: app
+        tags: 1tgr/websocket-lite:latest
+        load: true
+        cache-from: type=gha,scope=src
     - name: Integration test
-      run: docker-compose up --exit-code-from test
+      run: docker compose up --exit-code-from test
 
   fuzz-test:
     name: Fuzz test
     runs-on: ubuntu-latest
     needs: cargo-build
     steps:
-    - uses: actions/checkout@v3.2.0
-    - uses: jpribyl/action-docker-layer-caching@v0.1.0
-      continue-on-error: true
+    - uses: actions/checkout@v5
+    - uses: docker/setup-buildx-action@v3
     - name: Build fuzz test
-      run: >-
-        docker build
-        --target fuzz
-        -t 1tgr/websocket-lite-fuzz:latest
-        .
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        target: fuzz
+        tags: websocket-lite-fuzz:latest
+        load: true
+        cache-from: type=gha,scope=src
     - name: Fuzz test
       run: >-
         docker run
         --cap-add SYS_PTRACE
-        1tgr/websocket-lite-fuzz:latest
+        websocket-lite-fuzz:latest
         cargo fuzz run fuzz_codec fuzz/corpus/custom -- -dict=fuzz/dict.txt -max_total_time=60

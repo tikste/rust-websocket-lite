@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use std::{mem, usize};
+use std::mem;
 
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
 use bytes::BytesMut;
@@ -41,21 +41,21 @@ impl TryFrom<DataLength> for u64 {
             DataLength::Small(n) => Ok(u64::from(n)),
             DataLength::Medium(n) => {
                 if n <= 125 {
-                    return Err(format!("payload length {} should not be represented using 16 bits", n).into());
+                    return Err(format!("payload length {n} should not be represented using 16 bits").into());
                 }
 
                 Ok(u64::from(n))
             }
             DataLength::Large(n) => {
                 if n <= 65535 {
-                    return Err(format!("payload length {} should not be represented using 64 bits", n).into());
+                    return Err(format!("payload length {n} should not be represented using 64 bits").into());
                 }
 
                 if n >= 0x8000_0000_0000_0000 {
-                    return Err(format!("frame is too long: {} bytes ({:x})", n, n).into());
+                    return Err(format!("frame is too long: {n} bytes ({n:x})").into());
                 }
 
-                Ok(n as u64)
+                Ok(n)
             }
         }
     }
@@ -236,7 +236,7 @@ impl FrameHeader {
         let mut fin_opcode = rsv | opcode;
         if fin {
             fin_opcode |= 0x80;
-        };
+        }
 
         dst[0] = fin_opcode;
 
@@ -249,7 +249,7 @@ impl FrameHeader {
             }
             DataLength::Medium(n) => {
                 let (dst, rest) = dst.split_at_mut(4);
-                dst[1] = mask_bit | 126;
+                dst[1] = mask_bit | 0x7e;
                 BigEndian::write_u16(&mut dst[2..4], n);
                 rest
             }
@@ -329,6 +329,7 @@ impl<'a> Encoder<&'a FrameHeader> for FrameHeaderCodec {
 mod tests {
     use assert_allocations::assert_allocated_bytes;
     use bytes::BytesMut;
+    use quickcheck_macros::quickcheck;
     use tokio_util::codec::{Decoder, Encoder};
 
     use crate::frame::{FrameHeader, FrameHeaderCodec};

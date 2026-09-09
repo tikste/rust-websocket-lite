@@ -1,8 +1,8 @@
 #![warn(clippy::pedantic)]
-#![allow(clippy::let_underscore_drop)]
+#![allow(let_underscore_drop)]
 
-use futures_util::sink::SinkExt;
 use futures_util::StreamExt;
+use futures_util::sink::SinkExt;
 use websocket_lite::{Message, Opcode, Result};
 
 #[tokio::main]

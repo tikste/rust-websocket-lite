@@ -1,12 +1,14 @@
 #![warn(clippy::pedantic)]
 
+use std::hint::black_box;
+
 use bytes::BytesMut;
 use criterion::measurement::Measurement;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkGroup, Criterion};
+use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use static_assertions::const_assert_eq;
 use tokio_util::codec::{Decoder, Encoder};
-use websocket_codec::protocol::FrameHeaderCodec;
 use websocket_codec::MessageCodec;
+use websocket_codec::protocol::FrameHeaderCodec;
 
 fn bench_decode<M: Measurement, C, Item>(c: &mut BenchmarkGroup<M>, id: &str, data: &[u8], mut codec: C)
 where

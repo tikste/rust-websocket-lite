@@ -1,5 +1,5 @@
 #![warn(clippy::pedantic)]
-#![allow(clippy::let_underscore_drop)]
+#![allow(let_underscore_drop)]
 
 use std::env;
 
@@ -16,15 +16,11 @@ async fn main() -> Result<()> {
     loop {
         let msg: Option<Result<Message>> = ws_stream.next().await;
 
-        let msg = if let Some(msg) = msg {
-            msg
-        } else {
+        let Some(msg) = msg else {
             break;
         };
 
-        let msg = if let Ok(msg) = msg {
-            msg
-        } else {
+        let Ok(msg) = msg else {
             let _ = ws_stream.send(Message::close()).await;
             break;
         };

@@ -4,7 +4,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::RefCell;
 
-thread_local!(static BYTES_ALLOCATED: RefCell<usize> = RefCell::new(0));
+thread_local!(static BYTES_ALLOCATED: RefCell<usize> = const { RefCell::new(0) });
 
 fn allocated_bytes(len: usize) {
     BYTES_ALLOCATED.with(|cell| {
@@ -23,21 +23,25 @@ struct ThreadStatsAlloc<A> {
 unsafe impl<A: GlobalAlloc> GlobalAlloc for ThreadStatsAlloc<A> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         allocated_bytes(layout.size());
-        self.inner.alloc(layout)
+        // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract, which is what `self.inner` requires.
+        unsafe { self.inner.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.inner.dealloc(ptr, layout);
+        // SAFETY: the caller upholds `GlobalAlloc::dealloc`'s contract, which is what `self.inner` requires.
+        unsafe { self.inner.dealloc(ptr, layout) };
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         allocated_bytes(layout.size());
-        self.inner.alloc_zeroed(layout)
+        // SAFETY: the caller upholds `GlobalAlloc::alloc_zeroed`'s contract, which is what `self.inner` requires.
+        unsafe { self.inner.alloc_zeroed(layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         allocated_bytes(new_size);
-        self.inner.realloc(ptr, layout, new_size)
+        // SAFETY: the caller upholds `GlobalAlloc::realloc`'s contract, which is what `self.inner` requires.
+        unsafe { self.inner.realloc(ptr, layout, new_size) }
     }
 }
 

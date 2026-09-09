@@ -84,7 +84,7 @@ pub struct AsyncMaybeTlsStream {
 impl AsyncRead for AsyncMaybeTlsStream {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
         match &mut self.get_mut().inner {
-            AsyncMaybeTlsStreamInner::Plain(ref mut s) => Pin::new(s).poll_read(cx, buf),
+            AsyncMaybeTlsStreamInner::Plain(s) => Pin::new(s).poll_read(cx, buf),
             #[cfg(feature = "ssl-native-tls")]
             AsyncMaybeTlsStreamInner::NativeTls(s) => Pin::new(s).poll_read(cx, buf),
             #[cfg(feature = "__ssl-rustls")]
@@ -96,7 +96,7 @@ impl AsyncRead for AsyncMaybeTlsStream {
 impl AsyncWrite for AsyncMaybeTlsStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         match &mut self.get_mut().inner {
-            AsyncMaybeTlsStreamInner::Plain(ref mut s) => Pin::new(s).poll_write(cx, buf),
+            AsyncMaybeTlsStreamInner::Plain(s) => Pin::new(s).poll_write(cx, buf),
             #[cfg(feature = "ssl-native-tls")]
             AsyncMaybeTlsStreamInner::NativeTls(s) => Pin::new(s).poll_write(cx, buf),
             #[cfg(feature = "__ssl-rustls")]
@@ -106,7 +106,7 @@ impl AsyncWrite for AsyncMaybeTlsStream {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.get_mut().inner {
-            AsyncMaybeTlsStreamInner::Plain(ref mut s) => Pin::new(s).poll_flush(cx),
+            AsyncMaybeTlsStreamInner::Plain(s) => Pin::new(s).poll_flush(cx),
             #[cfg(feature = "ssl-native-tls")]
             AsyncMaybeTlsStreamInner::NativeTls(s) => Pin::new(s).poll_flush(cx),
             #[cfg(feature = "__ssl-rustls")]
@@ -116,7 +116,7 @@ impl AsyncWrite for AsyncMaybeTlsStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.get_mut().inner {
-            AsyncMaybeTlsStreamInner::Plain(ref mut s) => Pin::new(s).poll_shutdown(cx),
+            AsyncMaybeTlsStreamInner::Plain(s) => Pin::new(s).poll_shutdown(cx),
             #[cfg(feature = "ssl-native-tls")]
             AsyncMaybeTlsStreamInner::NativeTls(s) => Pin::new(s).poll_shutdown(cx),
             #[cfg(feature = "__ssl-rustls")]
@@ -131,7 +131,7 @@ enum MaybeTlsStreamInner {
     #[cfg(feature = "ssl-native-tls")]
     NativeTls(native_tls::TlsStream<StdTcpStream>),
     #[cfg(feature = "__ssl-rustls")]
-    Rustls(rustls::StreamOwned<rustls::ClientSession, StdTcpStream>),
+    Rustls(Box<rustls::StreamOwned<rustls::ClientConnection, StdTcpStream>>),
 }
 
 /// A stream that might be protected with TLS.
@@ -173,6 +173,52 @@ impl Write for MaybeTlsStream {
     }
 }
 
+/// Builds the `rustls` root certificate store from the roots selected by the feature flags.
+#[cfg(feature = "__ssl-rustls")]
+#[allow(clippy::unnecessary_wraps)] // only the native-roots build can fail
+fn rustls_root_store() -> Result<rustls::RootCertStore> {
+    #[cfg(feature = "ssl-rustls-webpki-roots")]
+    {
+        Ok(rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        })
+    }
+    #[cfg(feature = "ssl-rustls-native-roots")]
+    {
+        let result = rustls_native_certs::load_native_certs();
+        if result.certs.is_empty() {
+            if let Some(err) = result.errors.into_iter().next() {
+                return Err(err.into());
+            }
+        }
+
+        let mut root_store = rustls::RootCertStore::empty();
+        let (added, _ignored) = root_store.add_parsable_certificates(result.certs);
+        assert!(added > 0, "no CA certificates found");
+        Ok(root_store)
+    }
+    #[cfg(not(any(feature = "ssl-rustls-webpki-roots", feature = "ssl-rustls-native-roots")))]
+    {
+        Ok(rustls::RootCertStore::empty())
+    }
+}
+
+/// Builds a `rustls` client configuration that trusts the roots selected by the feature flags.
+#[cfg(feature = "__ssl-rustls")]
+fn rustls_client_config() -> Result<Arc<rustls::ClientConfig>> {
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(rustls_root_store()?)
+        .with_no_client_auth();
+
+    Ok(Arc::new(config))
+}
+
+/// Converts a host name into the `ServerName` that `rustls` verifies the peer certificate against.
+#[cfg(feature = "__ssl-rustls")]
+fn rustls_server_name(domain: &str) -> Result<rustls::pki_types::ServerName<'static>> {
+    Ok(rustls::pki_types::ServerName::try_from(domain)?.to_owned())
+}
+
 impl Connector {
     /// Creates a new `Connector` with the underlying TLS library specified in the feature flags.
     ///
@@ -193,23 +239,9 @@ impl Connector {
         {
             Ok(Self::NativeTls(native_tls::TlsConnector::new()?))
         }
-        #[cfg(feature = "ssl-rustls-webpki-roots")]
+        #[cfg(feature = "__ssl-rustls")]
         {
-            let mut config = rustls::ClientConfig::new();
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-            Ok(Self::Rustls(Arc::new(config)))
-        }
-        #[cfg(feature = "ssl-rustls-native-roots")]
-        {
-            let mut config = rustls::ClientConfig::new();
-            config.root_store = match rustls_native_certs::load_native_certs() {
-                Ok(store) | Err((Some(store), _)) => store,
-                Err((None, err)) => return Err(err.into()),
-            };
-            assert!(!config.root_store.is_empty(), "no CA certificates found");
-            Ok(Self::Rustls(Arc::new(config)))
+            Ok(Self::Rustls(rustls_client_config()?))
         }
     }
 
@@ -223,9 +255,8 @@ impl Connector {
             Self::NativeTls(connector) => MaybeTlsStreamInner::NativeTls(connector.connect(domain, stream)?),
             #[cfg(feature = "__ssl-rustls")]
             Self::Rustls(client_config) => {
-                let session =
-                    rustls::ClientSession::new(&client_config, webpki::DNSNameRef::try_from_ascii_str(domain)?);
-                MaybeTlsStreamInner::Rustls(rustls::StreamOwned::new(session, stream))
+                let connection = rustls::ClientConnection::new(client_config, rustls_server_name(domain)?)?;
+                MaybeTlsStreamInner::Rustls(Box::new(rustls::StreamOwned::new(connection, stream)))
             }
         };
 
@@ -253,30 +284,16 @@ impl AsyncConnector {
         {
             Ok(Self::NativeTls(native_tls::TlsConnector::new()?.into()))
         }
-        #[cfg(feature = "ssl-rustls-webpki-roots")]
+        #[cfg(feature = "__ssl-rustls")]
         {
-            let mut config = rustls::ClientConfig::new();
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-            let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-            Ok(Self::Rustls(connector))
-        }
-        #[cfg(feature = "ssl-rustls-native-roots")]
-        {
-            let mut config = rustls::ClientConfig::new();
-            config.root_store = match rustls_native_certs::load_native_certs() {
-                Ok(store) | Err((Some(store), _)) => store,
-                Err((None, err)) => return Err(err.into()),
-            };
-            assert!(!config.root_store.is_empty(), "no CA certificates found");
-            let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-            Ok(Self::Rustls(connector))
+            Ok(Self::Rustls(tokio_rustls::TlsConnector::from(rustls_client_config()?)))
         }
     }
 
     #[allow(clippy::match_wildcard_for_single_variants)]
     #[allow(clippy::unnecessary_wraps)]
+    // Nothing is awaited when every TLS backend is disabled.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     #[allow(unused_variables)]
     pub(crate) async fn wrap(self, domain: &str, stream: TokioTcpStream) -> Result<AsyncMaybeTlsStream> {
         let inner = match self {
@@ -284,11 +301,9 @@ impl AsyncConnector {
             #[cfg(feature = "ssl-native-tls")]
             Self::NativeTls(connector) => AsyncMaybeTlsStreamInner::NativeTls(connector.connect(domain, stream).await?),
             #[cfg(feature = "__ssl-rustls")]
-            Self::Rustls(connector) => AsyncMaybeTlsStreamInner::Rustls(
-                connector
-                    .connect(webpki::DNSNameRef::try_from_ascii_str(domain)?, stream)
-                    .await?,
-            ),
+            Self::Rustls(connector) => {
+                AsyncMaybeTlsStreamInner::Rustls(connector.connect(rustls_server_name(domain)?, stream).await?)
+            }
         };
 
         Ok(AsyncMaybeTlsStream { inner })

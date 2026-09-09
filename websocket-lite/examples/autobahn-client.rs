@@ -3,45 +3,40 @@
 //
 // This example code is copyright (c) 2014-2015 Cyderize
 #![warn(clippy::pedantic)]
-#![allow(clippy::let_underscore_drop)]
+#![allow(let_underscore_drop)]
 
 use std::io;
 use std::io::Write;
 
-use structopt::StructOpt;
+use clap::Parser;
 use url::Url;
 use websocket_lite::{ClientBuilder, Message, Opcode, Result};
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "async-autobahn-client", about = "Client for the Autobahn fuzzing server")]
+#[derive(Debug, Parser)]
+#[command(name = "autobahn-client", about = "Client for the Autobahn fuzzing server")]
 struct Opt {
-    /// websocket url. ex. ws://localhost:9001/
-    #[structopt(parse(try_from_str = Url::parse))]
+    /// websocket url. ex. <ws://localhost:9001>/
+    #[arg(value_parser = Url::parse)]
     ws_url: Url,
 }
 
 fn main() -> Result<()> {
-    let Opt { ws_url } = Opt::from_args();
+    let Opt { ws_url } = Opt::parse();
     let agent = "rust-websocket-lite";
-    println!("Using fuzzingserver {}", ws_url);
-    println!("Using agent {}", agent);
+    println!("Using fuzzingserver {ws_url}");
+    println!("Using agent {agent}");
     println!("Running test suite...");
 
     let case_count = get_case_count(&ws_url)?;
     for case_id in 1..=case_count {
-        let url = format!(
-            "{ws_url}runCase?case={case_id}&agent={agent}",
-            ws_url = ws_url,
-            case_id = case_id,
-            agent = agent
-        );
+        let url = format!("{ws_url}runCase?case={case_id}&agent={agent}");
 
         let mut client = ClientBuilder::new(&url)?.connect_insecure()?;
 
         {
             let stdout = io::stdout();
             let mut stdout = stdout.lock();
-            write!(stdout, "Executing test case: {}/{}\r", case_id, case_count)?;
+            write!(stdout, "Executing test case: {case_id}/{case_count}\r")?;
             stdout.flush()?;
         }
 
@@ -65,7 +60,7 @@ fn main() -> Result<()> {
 }
 
 fn get_case_count(ws_url: &Url) -> Result<usize> {
-    let url = format!("{ws_url}getCaseCount", ws_url = ws_url);
+    let url = format!("{ws_url}getCaseCount");
     let mut client = ClientBuilder::new(&url)?.connect_insecure()?;
     let mut count = 0;
 
@@ -73,7 +68,7 @@ fn get_case_count(ws_url: &Url) -> Result<usize> {
         match message.opcode() {
             Opcode::Text => {
                 count = message.as_text().unwrap().parse()?;
-                println!("Will run {} cases...", count);
+                println!("Will run {count} cases...");
             }
 
             Opcode::Close => {
@@ -91,7 +86,7 @@ fn get_case_count(ws_url: &Url) -> Result<usize> {
 }
 
 fn update_reports(ws_url: &Url, agent: &str) -> Result<()> {
-    let url = format!("{ws_url}updateReports?agent={agent}", ws_url = ws_url, agent = agent);
+    let url = format!("{ws_url}updateReports?agent={agent}");
     let mut client = ClientBuilder::new(&url)?.connect_insecure()?;
     println!("Updating reports...");
 
